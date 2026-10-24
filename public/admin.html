@@ -44,11 +44,17 @@
 <p class="muted" style="margin-top:1rem"><a href="/">← Back to site</a></p>
 <script>
 let KEY = sessionStorage.getItem('gv-admin-key') || '';
+let API = ''; // set to the public site's URL when this panel runs on its own host
 const $ = (s) => document.querySelector(s);
+
+async function init() {
+  try { const cfg = await (await fetch('/api/config')).json(); if (cfg.publicApiBase) API = cfg.publicApiBase; } catch {}
+  if (KEY) showPanel(); else showLogin();
+}
 
 async function load() {
   const status = $('#statusSel').value;
-  const r = await fetch('/api/admin/groups?status=' + status, { headers: { 'x-admin-key': KEY } });
+  const r = await fetch(API + '/api/admin/groups?status=' + status, { headers: { 'x-admin-key': KEY } });
   if (r.status === 401) { sessionStorage.removeItem('gv-admin-key'); KEY = ''; return showLogin(); }
   const d = await r.json();
   $('#list').innerHTML = d.items.length ? d.items.map(card).join('') : '<div class="card muted">Nothing here.</div>';
@@ -73,7 +79,7 @@ function card(g) {
 
 function wire() {
   document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
-    await fetch(`/api/admin/${b.dataset.id}/${b.dataset.act}`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    await fetch(`${API}/api/admin/${b.dataset.id}/${b.dataset.act}`, { method: 'POST', headers: { 'x-admin-key': KEY } });
     load();
   }));
 }
@@ -85,7 +91,7 @@ function showPanel() { $('#loginRow').style.display = 'none'; $('#tabsRow').styl
 
 $('#loginBtn').addEventListener('click', async () => {
   KEY = $('#key').value;
-  const r = await fetch('/api/admin/groups?status=pending', { headers: { 'x-admin-key': KEY } });
+  const r = await fetch(API + '/api/admin/groups?status=pending', { headers: { 'x-admin-key': KEY } });
   if (r.ok) { sessionStorage.setItem('gv-admin-key', KEY); showPanel(); }
   else alert('Wrong password');
 });
@@ -93,14 +99,14 @@ $('#reloadBtn').addEventListener('click', load);
 $('#statusSel').addEventListener('change', load);
 $('#purgeBtn').addEventListener('click', async () => {
   if (!confirm('Delete every demo group?')) return;
-  const d = await (await fetch('/api/admin/groups?status=all', { headers: { 'x-admin-key': KEY } })).json();
+  const d = await (await fetch(API + '/api/admin/groups?status=all', { headers: { 'x-admin-key': KEY } })).json();
   for (const g of d.items.filter((x) => x.isDemo)) {
-    await fetch(`/api/admin/${g.id}/delete`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    await fetch(`${API}/api/admin/${g.id}/delete`, { method: 'POST', headers: { 'x-admin-key': KEY } });
   }
   load();
 });
 
-if (KEY) showPanel(); else showLogin();
+init();
 </script>
 </body>
 </html>

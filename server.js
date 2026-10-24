@@ -30,6 +30,9 @@ const ADSENSE_CLIENT = process.env.ADSENSE_CLIENT || '';
 // Optional second domain used ONLY for the admin panel (e.g. admin-xxx.up.railway.app).
 // When set, that host serves the admin panel on every path; the public host keeps the secret path.
 const ADMIN_HOST = (process.env.ADMIN_HOST || '').toLowerCase();
+// On the admin-only host, the panel must control the PUBLIC site's database,
+// not this service's own copy. This env tells the panel where the public API lives.
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 /* ---------------------------------------------------------------- database */
@@ -268,7 +271,9 @@ async function peekLink(url, type) {
 async function handleApi(req, res, pathname, query, ip) {
   /* ---- config for the frontend ---- */
   if (req.method === 'GET' && pathname === '/api/config') {
-    return json(res, 200, { siteName: SITE_NAME, adsenseClient: ADSENSE_CLIENT, categories: CATEGORIES, countries: COUNTRIES, languages: LANGUAGES, types: TYPES });
+    const host = (req.headers.host || '').toLowerCase().split(':')[0];
+    const onAdminHost = !!(ADMIN_HOST && host === ADMIN_HOST);
+    return json(res, 200, { siteName: SITE_NAME, adsenseClient: ADSENSE_CLIENT, categories: CATEGORIES, countries: COUNTRIES, languages: LANGUAGES, types: TYPES, publicApiBase: onAdminHost ? PUBLIC_URL : '' });
   }
 
   /* ---- list groups ---- */
