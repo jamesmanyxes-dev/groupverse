@@ -467,6 +467,16 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, url.searchParams, ip);
 
+    // admin-only host: everything here is the control panel
+    const host = (req.headers.host || '').toLowerCase().split(':')[0];
+    if (ADMIN_HOST && host === ADMIN_HOST) {
+      if (req.method === 'GET' && pathname !== '/favicon.ico') {
+        if (serveStatic(res, 'admin.html')) return;
+      }
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      return res.end('Not found');
+    }
+
     if (req.method === 'GET' && pathname === '/sitemap.xml') {
       const base = `https://${req.headers.host}`;
       const urls = db.groups.filter((g) => g.status === 'approved').map((g) => `  <url><loc>${base}/group/${g.slug}</loc></url>`).join('\n');
@@ -488,16 +498,6 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
       if (serveStatic(res, 'index.html')) return;
     }
-    // admin-only host: everything here is the control panel
-    const host = (req.headers.host || '').toLowerCase().split(':')[0];
-    if (ADMIN_HOST && host === ADMIN_HOST) {
-      if (req.method === 'GET' && pathname !== '/favicon.ico') {
-        if (serveStatic(res, 'admin.html')) return;
-      }
-      res.writeHead(404, { 'content-type': 'text/plain' });
-      return res.end('Not found');
-    }
-
     if (req.method === 'GET' && pathname === '/' + ADMIN_PATH) {
       if (serveStatic(res, 'admin.html')) return;
     }

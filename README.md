@@ -24,7 +24,8 @@ node server.js
    - `SITE_NAME` — your site's name (default: GroupVerse)
    - `ADSENSE_CLIENT` — your AdSense id (`ca-pub-XXXXXXXXXXXXXXXX`) once you have one
 4. **Settings → Networking → Generate Domain** → your live link. 🎉
-5. (Optional, recommended) **Settings → Volumes** → mount a volume at `/data`, then set the variable `DATA_DIR=/data`. This keeps all submitted groups safe across redeploys.
+5. (Optional, recommended) **Settings → Volumes** → mount a volume at `/data`, then set the variable `DATA_DIR=/data`. This keeps all submitted groups and group photos safe across redeploys.
+6. (Optional) **Separate admin link**: deploy the same repo as a second service (e.g. `groupverse-admin`), generate a domain for it, and set `ADMIN_HOST` on that service to its own domain (e.g. `groupverse-admin-production.up.railway.app`). That host then serves only the admin panel, giving you two links: one public site and one private control panel.
 
 ## Admin panel
 
