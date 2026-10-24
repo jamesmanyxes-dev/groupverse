@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Admin · GroupVerse</title>
+<style>
+  :root { --bg:#050510; --card:rgba(16,18,42,.62); --line:rgba(120,140,255,.16); --txt:#e8ecff; --dim:#8b93c7; --cyan:#00f0ff; --bad:#ff4d6d; --ok:#2bd97c; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--txt); font-family:'Space Grotesk',system-ui,sans-serif; padding:1.2rem; max-width:860px; margin:0 auto; }
+  h1 { font-family:Orbitron,sans-serif; font-size:1.2rem; letter-spacing:.06em; margin-bottom:1rem; background:linear-gradient(90deg,#00f0ff,#b537f2); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  input,select,button { font:inherit; color:var(--txt); background:rgba(10,12,34,.8); border:1px solid var(--line); border-radius:10px; padding:.55rem .8rem; }
+  input:focus { outline:none; border-color:var(--cyan); }
+  button { cursor:pointer; }
+  .row { display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:1rem; margin-bottom:.7rem; }
+  .card h3 { font-size:.95rem; margin-bottom:.3rem; }
+  .muted { color:var(--dim); font-size:.8rem; }
+  .acts { display:flex; gap:.4rem; margin-top:.6rem; flex-wrap:wrap; }
+  .acts button { font-size:.78rem; padding:.4rem .8rem; }
+  .ok { border-color:var(--ok); color:var(--ok); }
+  .bad { border-color:var(--bad); color:var(--bad); }
+  a { color:var(--cyan); }
+</style>
+</head>
+<body>
+<h1>⌬ GroupVerse Admin</h1>
+<div class="row" id="loginRow">
+  <input type="password" id="key" placeholder="Admin password">
+  <button id="loginBtn">Unlock</button>
+</div>
+<div class="row" id="tabsRow" style="display:none">
+  <select id="statusSel">
+    <option value="pending">Pending review</option>
+    <option value="approved">Approved (live)</option>
+    <option value="rejected">Rejected</option>
+    <option value="all">All</option>
+  </select>
+  <button id="reloadBtn">Refresh</button>
+  <button class="bad" id="purgeBtn">Delete ALL demo groups</button>
+</div>
+<div id="list"></div>
+<p class="muted" style="margin-top:1rem"><a href="/">← Back to site</a></p>
+<script>
+let KEY = sessionStorage.getItem('gv-admin-key') || '';
+const $ = (s) => document.querySelector(s);
+
+async function load() {
+  const status = $('#statusSel').value;
+  const r = await fetch('/api/admin/groups?status=' + status, { headers: { 'x-admin-key': KEY } });
+  if (r.status === 401) { sessionStorage.removeItem('gv-admin-key'); KEY = ''; return showLogin(); }
+  const d = await r.json();
+  $('#list').innerHTML = d.items.length ? d.items.map(card).join('') : '<div class="card muted">Nothing here.</div>';
+  wire();
+}
+
+function card(g) {
+  const rep = g.reports ? ` · <b style="color:var(--bad)">${g.reports} reports</b>` : '';
+  return `<div class="card" id="c-${g.id}">
+    <h3>${esc(g.title)} <span class="muted">(${g.type}${g.isDemo ? ' · DEMO' : ''})</span></h3>
+    <div class="muted">${g.category} · ${g.country} · ${g.language} · status: ${g.status}${rep}</div>
+    <div class="muted" style="margin-top:.3rem;word-break:break-all">${esc(g.url)}</div>
+    ${g.description ? `<p class="muted" style="margin-top:.4rem">${esc(g.description)}</p>` : ''}
+    <div class="acts">
+      ${g.status !== 'approved' ? `<button class="ok" data-act="approve" data-id="${g.id}">Approve</button>` : ''}
+      ${g.status !== 'rejected' ? `<button class="bad" data-act="reject" data-id="${g.id}">Reject</button>` : ''}
+      <button class="bad" data-act="delete" data-id="${g.id}">Delete</button>
+      ${g.reports ? `<button data-act="reset-reports" data-id="${g.id}">Clear reports</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function wire() {
+  document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
+    await fetch(`/api/admin/${b.dataset.id}/${b.dataset.act}`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    load();
+  }));
+}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function showLogin() { $('#loginRow').style.display = 'flex'; $('#tabsRow').style.display = 'none'; $('#list').innerHTML = ''; }
+function showPanel() { $('#loginRow').style.display = 'none'; $('#tabsRow').style.display = 'flex'; load(); }
+
+$('#loginBtn').addEventListener('click', async () => {
+  KEY = $('#key').value;
+  const r = await fetch('/api/admin/groups?status=pending', { headers: { 'x-admin-key': KEY } });
+  if (r.ok) { sessionStorage.setItem('gv-admin-key', KEY); showPanel(); }
+  else alert('Wrong password');
+});
+$('#reloadBtn').addEventListener('click', load);
+$('#statusSel').addEventListener('change', load);
+$('#purgeBtn').addEventListener('click', async () => {
+  if (!confirm('Delete every demo group?')) return;
+  const d = await (await fetch('/api/admin/groups?status=all', { headers: { 'x-admin-key': KEY } })).json();
+  for (const g of d.items.filter((x) => x.isDemo)) {
+    await fetch(`/api/admin/${g.id}/delete`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+  }
+  load();
+});
+
+if (KEY) showPanel(); else showLogin();
+</script>
+</body>
+</html>
