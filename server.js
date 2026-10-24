@@ -15,6 +15,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import https from 'node:https';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,6 +24,7 @@ const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
+const ADMIN_PATH = (process.env.ADMIN_PATH || 'admin').replace(/^\/+|\/+$/g, ''); // her secret link: /<ADMIN_PATH>
 const SITE_NAME = process.env.SITE_NAME || 'GroupVerse';
 const ADSENSE_CLIENT = process.env.ADSENSE_CLIENT || '';
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -155,8 +157,59 @@ function rateLimited(ip, limit, windowMs) {
 }
 
 function publicGroup(g) {
-  const { id, slug, title, url, type, category, country, language, tags, description, clicks, views, createdAt } = g;
-  return { id, slug, title, url, type, category, country, language, tags, description, clicks, views, createdAt };
+  const { id, slug, title, url, imageUrl, type, category, country, language, tags, description, clicks, views, createdAt } = g;
+  return { id, slug, title, url, imageUrl, type, category, country, language, tags, description, clicks, views, createdAt };
+}
+
+/* -------- link metadata (group photo / name) -------- */
+const GENERIC_WA_IMG = 'static.whatsapp.net';
+
+function fetchPage(urlStr) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    try {
+      const req = https.get(urlStr, { timeout: 6000, headers: { 'user-agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36', accept: 'text/html' } }, (res) => {
+        // follow one redirect
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          const next = new URL(res.headers.location, urlStr).href;
+          return done(fetchPage(next));
+        }
+        if (res.statusCode !== 200) { res.resume(); return done(null); }
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { data += c; if (data.length > 300_000) req.destroy(); });
+        res.on('end', () => done(data));
+        res.on('error', () => done(null));
+      });
+      req.on('timeout', () => { req.destroy(); done(null); });
+      req.on('error', () => done(null));
+    } catch { done(null); }
+  });
+}
+
+function metaTag(html, prop) {
+  const re = new RegExp(`<meta[^>]*(?:property|name)=["']${prop}["'][^>]*>`, 'i');
+  const tag = (html.match(re) || [''])[0];
+  const m = tag.match(/content=["']([\s\S]*?)["']/i);
+  return m ? m[1].trim() : '';
+}
+
+async function peekLink(url, type) {
+  if (!validLink(type, url)) return {};
+  const html = await fetchPage(url);
+  if (!html) return {};
+  let image = metaTag(html, 'og:image');
+  if (image && image.includes(GENERIC_WA_IMG)) image = ''; // WhatsApp serves its own logo, not the group's DP
+  let title = metaTag(html, 'og:title');
+  if (title === 'WhatsApp Group Invite') title = '';
+  const desc = metaTag(html, 'og:description');
+  const out = {};
+  if (image && /^https?:\/\//.test(image)) out.imageUrl = image.slice(0, 1000);
+  if (title && title.length >= 3) out.title = title.slice(0, 80);
+  if (desc && desc.length > 10 && !/come chat|group invite/i.test(desc)) out.description = desc.slice(0, 1000);
+  return out;
 }
 
 /* ------------------------------------------------------------------- api */
@@ -215,6 +268,15 @@ async function handleApi(req, res, pathname, query, ip) {
     return json(res, 200, { group: publicGroup(g), related });
   }
 
+  /* ---- peek at an invite link for auto-fill (photo, name, info) ---- */
+  if (req.method === 'GET' && pathname === '/api/peek') {
+    const url = safeStr(query.get('url') || '', 300);
+    const type = TYPES.includes(query.get('type')) ? query.get('type') : 'whatsapp';
+    if (rateLimited(ip, 30, 3600_000)) return json(res, 429, { error: 'Slow down a little.' });
+    const meta = await peekLink(url, type);
+    return json(res, 200, meta);
+  }
+
   /* ---- submit a group ---- */
   if (req.method === 'POST' && pathname === '/api/submit') {
     if (rateLimited(ip, 5, 3600_000)) return json(res, 429, { error: 'Too many submissions. Try again later.' });
@@ -236,10 +298,11 @@ async function handleApi(req, res, pathname, query, ip) {
     if (db.groups.some((g) => g.url === url && g.status !== 'rejected')) return json(res, 400, { error: 'This group link was already submitted.' });
 
     const id = uid();
-    const group = { id, slug: slugify(title, id), title, url, type, category, country, language, tags, description, status: 'pending', clicks: 0, views: 0, reports: 0, createdAt: Date.now(), ip };
+    const userImage = safeStr(body.imageUrl, 1000);
+    const group = { id, slug: slugify(title, id), title, url, type, category, country, language, tags, description, imageUrl: /^https?:\/\//.test(userImage) ? userImage : safeStr(body.fetchedImageUrl || '', 1000), status: 'pending', clicks: 0, views: 0, reports: 0, createdAt: Date.now(), ip };
     db.groups.push(group);
     save();
-    return json(res, 200, { ok: true, message: 'Submitted! Your group will appear after a quick review.' });
+    return json(res, 200, { ok: true, message: 'Requesting review… your group is in the queue.', slug: group.slug });
   }
 
   /* ---- track a join click ---- */
@@ -359,7 +422,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
       if (serveStatic(res, 'index.html')) return;
     }
-    if (req.method === 'GET' && pathname === '/admin') {
+    if (req.method === 'GET' && pathname === '/' + ADMIN_PATH) {
       if (serveStatic(res, 'admin.html')) return;
     }
     const clean = pathname.replace(/^\/+/, '');

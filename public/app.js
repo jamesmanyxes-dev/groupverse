@@ -150,13 +150,19 @@ async function loadGroups(reset) {
   $('#moreBtn')?.addEventListener('click', () => { state.page++; loadGroups(false); });
 }
 
-function cardHtml(g) {
+function avatarHtml(g, big) {
+  if (g.imageUrl && /^https?:\/\//.test(g.imageUrl)) {
+    return `<div class="avatar${big ? ' big' : ''}" style="overflow:hidden;background:#e9f5ee"><img src="${esc(g.imageUrl)}" alt="" loading="lazy" onerror="this.remove()"></div>`;
+  }
   const initial = g.title.replace(/[^\p{L}\p{N}]/gu, '').charAt(0).toUpperCase() || 'G';
+  return `<div class="avatar${big ? ' big' : ''}">${initial}</div>`;
+}
+function cardHtml(g) {
   const cls = { whatsapp: 'wa', telegram: 'tg', discord: 'dc', signal: 'sg' }[g.type];
   return `<article class="card">
     <span class="typetag ${cls}">${g.type}</span>
     <div class="card-top">
-      <div class="avatar">${initial}</div>
+      ${avatarHtml(g)}
       <div style="min-width:0">
         <h3><a href="#/group/${g.slug}" style="color:var(--txt)">${esc(g.title)}</a></h3>
         <div class="meta">
@@ -200,13 +206,12 @@ async function renderDetail(slug) {
   try { d = await (await fetch('/api/groups/' + slug)).json(); } catch { d = { error: 'x' }; }
   if (d.error) { app.innerHTML = `<div class="empty"><div class="big">404</div><p>Group not found — it may have been removed.</p><p style="margin-top:.8rem"><a href="#/">← Back home</a></p></div>`; return; }
   const g = d.group;
-  const initial = g.title.replace(/[^\p{L}\p{N}]/gu, '').charAt(0).toUpperCase() || 'G';
   const cls = { whatsapp: 'wa', telegram: 'tg', discord: 'dc', signal: 'sg' }[g.type];
   const joinLabel = { whatsapp: 'Join WhatsApp group', telegram: 'Join Telegram group', discord: 'Join Discord server', signal: 'Join Signal group' }[g.type];
   app.innerHTML = `
     <a class="backlink" href="#/">← Back to all groups</a>
     <section class="panel detail">
-      <div class="avatar">${initial}</div>
+      ${avatarHtml(g, true)}
       <h1>${esc(g.title)}</h1>
       <div class="meta">
         <span>${esc(g.category)}</span>
@@ -229,16 +234,21 @@ function renderAdd() {
   app.innerHTML = `
     <section class="panel">
       <h2>Add your group</h2>
-      <p class="sub">Free. Reviewed quickly, then live for everyone to see.</p>
+      <p class="sub">Free. After you submit, your group is <b>requesting review</b> — it only appears publicly once the admin approves it.</p>
+      <div class="addpreview" id="addPreview"></div>
       <form id="addForm">
         <input class="hp" name="website" tabindex="-1" autocomplete="off">
         <label>Group name *</label>
         <input name="title" maxlength="80" required placeholder="e.g. Tech Talks Daily">
         <label>Platform *</label>
-        <select name="type">${CFG.types.map((t) => `<option value="${t}">${{ whatsapp: 'WhatsApp', telegram: 'Telegram', discord: 'Discord', signal: 'Signal' }[t]}</option>`).join('')}</select>
+        <select name="type" id="typeSel">${CFG.types.map((t) => `<option value="${t}">${{ whatsapp: 'WhatsApp', telegram: 'Telegram', discord: 'Discord', signal: 'Signal' }[t]}</option>`).join('')}</select>
         <label>Invite link *</label>
-        <input name="url" required placeholder="https://chat.whatsapp.com/… or https://t.me/…">
+        <input name="url" id="urlInput" required placeholder="https://chat.whatsapp.com/… or https://t.me/…">
         <p class="note">How to get it: WhatsApp → group info → invite via link · Telegram → group → add members → copy link · Discord → server → invite.</p>
+        <p class="note autofill" id="autofillNote" style="display:none"></p>
+        <label>Group photo link (optional)</label>
+        <input name="imageUrl" id="imageUrlInput" placeholder="https://… picture of the group">
+        <p class="note">WhatsApp keeps group photos private, so paste a photo link if you want it shown. Telegram and Discord photos are fetched automatically from the invite link.</p>
         <label>Category</label>
         <select name="category">${CFG.categories.map((c) => `<option>${c}</option>`).join('')}</select>
         <label>Country</label>
@@ -256,16 +266,61 @@ function renderAdd() {
         </div>
       </form>
     </section>`;
+  const urlInput = $('#urlInput');
+  let peeked = null;
+  const peekTimer = { t: null };
+  function runPeek() {
+    const url = urlInput.value.trim();
+    if (!url) return;
+    // auto-detect platform from the link
+    let type = $('#typeSel').value;
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, '');
+      const detected = host.includes('whatsapp') || host === 'wa.me' ? 'whatsapp' : host === 't.me' || host === 'telegram.me' ? 'telegram' : host.includes('discord') ? 'discord' : host.includes('signal') ? 'signal' : null;
+      if (detected && detected !== type) { $('#typeSel').value = detected; type = detected; }
+    } catch {}
+    const note = $('#autofillNote');
+    note.style.display = 'block';
+    note.textContent = 'Checking the link for the group photo and name…';
+    fetch('/api/peek?url=' + encodeURIComponent(url) + '&type=' + type).then((r) => r.json()).then((m) => {
+      peeked = m && m.imageUrl ? m : null;
+      if (m && m.imageUrl) {
+        if (!$('#imageUrlInput').value.trim()) $('#imageUrlInput').value = m.imageUrl;
+        $('#addPreview').innerHTML = `<div class="avatar big" style="overflow:hidden;background:#e9f5ee"><img src="${esc(m.imageUrl)}" alt=""></div><div><b style="font-size:.9rem">Photo found</b><p class="note">This picture will be the group's face on the site.</p></div>`;
+        note.textContent = 'Found the group photo — it will show as the group picture.';
+      } else {
+        note.textContent = 'No photo found at that link. You can paste a photo link below (optional).';
+      }
+    }).catch(() => { note.style.display = 'none'; });
+  }
+  urlInput.addEventListener('blur', runPeek);
+  urlInput.addEventListener('change', runPeek);
   $('#addForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
+    if (!peeked && urlInput.value.trim()) { try { peeked = await runPeekOnce(); } catch {} }
     const body = Object.fromEntries(new FormData(f));
     body.tags = body.tags.split(',');
+    if (peeked && peeked.imageUrl) body.fetchedImageUrl = peeked.imageUrl;
+    if (peeked && peeked.title && body.title === '') body.title = peeked.title;
     const r = await fetch('/api/submit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const d = await r.json();
-    if (d.ok) { toast(d.message); f.reset(); setTimeout(() => (location.hash = '#/'), 1400); }
-    else toast(d.error || 'Something went wrong', true);
+    if (d.ok) {
+      f.closest('.panel').innerHTML = `
+        <div class="reqreview">
+          <div class="pendingbadge">Requesting review</div>
+          <h2 style="margin-top:.8rem">Almost there</h2>
+          <p style="color:var(--dim);margin-top:.4rem">Your group <b>${esc(body.title || 'submission')}</b> is in the review queue.<br>It will go public as soon as the admin approves it — nothing shows on the site until then.</p>
+          <div class="btnrow"><button class="bigbtn" type="button" onclick="location.hash='#/'">Back to groups</button></div>
+        </div>`;
+      window.scrollTo(0, 0);
+    } else toast(d.error || 'Something went wrong', true);
   });
+  async function runPeekOnce() {
+    const url = urlInput.value.trim(); const type = $('#typeSel').value;
+    if (!url) return null;
+    return fetch('/api/peek?url=' + encodeURIComponent(url) + '&type=' + type).then((r) => r.json()).catch(() => null);
+  }
 }
 
 /* ---------- static pages ---------- */

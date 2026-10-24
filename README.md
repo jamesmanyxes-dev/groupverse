@@ -20,6 +20,7 @@ node server.js
 2. Go to [railway.com](https://railway.com) → **New Project** → **Deploy from GitHub repo** → pick your repo. Railway detects Node automatically and runs `npm start`.
 3. In the service → **Variables**, add:
    - `ADMIN_PASSWORD` — password for your admin panel (**required, pick something strong**)
+   - `ADMIN_PATH` — your own secret link to the admin panel. Example: set it to `my-private-room` and your panel lives at `https://your-site.railway.app/my-private-room`. If you skip this it defaults to `/admin`.
    - `SITE_NAME` — your site's name (default: GroupVerse)
    - `ADSENSE_CLIENT` — your AdSense id (`ca-pub-XXXXXXXXXXXXXXXX`) once you have one
 4. **Settings → Networking → Generate Domain** → your live link. 🎉
@@ -27,9 +28,17 @@ node server.js
 
 ## Admin panel
 
-Open `https://your-site.railway.app/admin`, enter your `ADMIN_PASSWORD`.
+Open your secret admin link (`/admin` by default, or your custom `ADMIN_PATH`), enter your `ADMIN_PASSWORD`.
 There you can approve or reject submitted groups, delete anything, clear
 reports, and wipe the built-in demo groups with one button.
+
+## Group photos
+
+When someone adds a Telegram or Discord group, the site automatically fetches
+the group's picture from the invite link and shows it everywhere the group
+appears. WhatsApp keeps group photos private, so the form has an optional
+"Group photo link" field — WhatsApp group owners can paste any picture link
+and it becomes the group's face on the site.
 
 ## Making money
 
