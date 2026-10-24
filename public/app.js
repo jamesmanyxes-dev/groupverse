@@ -98,12 +98,13 @@ function route() {
 /* ---------- home ---------- */
 async function renderHome() {
   app.innerHTML = `
-    <section class="hero">
-      <div class="hero-badge"><span class="dot"></span> Live directory</div>
+    <section class="hero mini">
       <h1>${CFG.siteName}</h1>
-      <p>Find & join WhatsApp, Telegram, Discord and Signal groups — instantly.</p>
-      <div class="stats"><div class="stat"><b id="stG">…</b><span>Groups</span></div><div class="stat"><b id="stJ">…</b><span>Joins</span></div><div class="stat"><b id="stM">…</b><span>Members</span></div></div>
+      <p>Join WhatsApp, Telegram, Discord & Signal groups — free.</p>
     </section>
+    <div class="homeactions">
+      <button class="cta big" id="heroAdd">+ Add Your Group</button>
+    </div>
     <div class="filters">
       <select id="categorySel">${window._opts.categories}</select>
       <select id="countrySel">${window._opts.countries}</select>
@@ -112,14 +113,11 @@ async function renderHome() {
     </div>
     <div class="sortbar" id="sortbar">
       ${['new', 'popular', 'views'].map((s) => `<button class="chip ${state.sort === s ? 'on' : ''}" data-sort="${s}">${{ new: 'Newest', popular: 'Popular', views: 'Most viewed' }[s]}</button>`).join('')}
+      <span class="count" id="gcount"></span>
     </div>
     <div class="grid" id="grid"></div>
     <div class="morewrap" id="morewrap"></div>`;
-  fetch('/api/stats').then((r) => r.json()).then((s) => {
-    $('#stG').textContent = s.groups.toLocaleString();
-    $('#stJ').textContent = s.joins.toLocaleString();
-    $('#stM').textContent = s.members.toLocaleString();
-  });
+  $('#heroAdd').addEventListener('click', () => (location.hash = '#/add'));
   for (const [id, key] of [['categorySel', 'category'], ['countrySel', 'country'], ['languageSel', 'language'], ['typeSel', 'type']]) {
     const el = $('#' + id);
     el.value = state[key];
@@ -141,6 +139,7 @@ async function loadGroups(reset) {
   const q = new URLSearchParams({ search: state.search, category: state.category, country: state.country, language: state.language, type: state.type, sort: state.sort, page: state.page });
   const data = await (await fetch('/api/groups?' + q)).json();
   state.total = data.total; state.loading = false;
+  const gc = $('#gcount'); if (gc) gc.textContent = data.total + ' groups';
   if (reset) grid.innerHTML = '';
   if (!data.items.length && state.page === 1) {
     grid.innerHTML = `<div class="empty"><div class="big">404</div><p>No groups found${state.search ? ' for “' + state.search + '”' : ''} yet.</p><p style="margin-top:.6rem"><a href="#/add">Be the first to add one →</a></p></div>`;

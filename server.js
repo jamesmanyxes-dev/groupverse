@@ -156,7 +156,13 @@ function readBody(req) {
 }
 
 function safeStr(v, max = 300) {
-  return typeof v === 'string' ? v.trim().slice(0, max) : '';
+  if (typeof v !== 'string') return '';
+  return v
+    .replace(/&#x?([0-9a-f]+);/gi, (_, n) => { try { return String.fromCodePoint(n.startsWith('x') || n.startsWith('X') ? parseInt(n.slice(1), 16) : parseInt(n, 10)); } catch { return ' '; } })
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .trim()
+    .slice(0, max);
 }
 
 function validLink(type, url) {
