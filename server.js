@@ -276,7 +276,7 @@ async function peekLink(url, type) {
   // Preferred: the pair-code linked WhatsApp session knows the REAL name + DP.
   if (type === 'whatsapp' && LINKPEEK_URL && LINKPEEK_TOKEN) {
     try {
-      const r = await fetch(`${LINKPEEK_URL}/peek?url=${encodeURIComponent(url)}`, { headers: { 'x-lp-key': LINKPEEK_TOKEN }, signal: AbortSignal.timeout(15000) });
+      const r = await fetch(`${LINKPEEK_URL}/gv/peek?url=${encodeURIComponent(url)}`, { headers: { 'x-lp-key': LINKPEEK_TOKEN }, signal: AbortSignal.timeout(15000) });
       if (r.ok) {
         const m = await r.json();
         if (m.ok) {
@@ -312,7 +312,7 @@ async function aiCheckGroup(g) {
   if (orKey) urls.push(`https://openrouter.ai/api/v1/chat/completions|meta-llama/llama-3.3-70b-instruct|Bearer ${orKey}`);
   if (groqKey) urls.push(`https://api.groq.com/openai/v1/chat/completions|llama-3.3-70b-versatile|Bearer ${groqKey}`);
   urls.push('https://api.openai.com/v1/chat/completions|gpt-4o-mini|Bearer sentinel');
-  if (LINKPEEK_URL && LINKPEEK_TOKEN) urls.push(`${LINKPEEK_URL}/aicheck|x-lp-key: ${LINKPEEK_TOKEN}`);
+  if (LINKPEEK_URL && LINKPEEK_TOKEN) urls.push(`${LINKPEEK_URL}/gv/aicheck|x-lp-key: ${LINKPEEK_TOKEN}`);
   for (const u of urls) {
     try {
       if (u.includes('/aicheck')) {
@@ -406,12 +406,12 @@ async function handleApi(req, res, pathname, query, ip) {
     if (key !== ADMIN_PASSWORD) return json(res, 401, { error: 'Wrong admin password' });
     try {
       if (req.method === 'GET' && pathname === '/api/wa/status') {
-        const r = await fetch(`${LINKPEEK_URL}/status`, { headers: { 'x-lp-key': LINKPEEK_TOKEN }, signal: AbortSignal.timeout(8000) });
+        const r = await fetch(`${LINKPEEK_URL}/gv/status`, { headers: { 'x-lp-key': LINKPEEK_TOKEN }, signal: AbortSignal.timeout(8000) });
         return json(res, r.status, await r.json());
       }
       if (req.method === 'POST' && pathname === '/api/wa/pair') {
         const body = JSON.parse((await readBody(req)) || '{}');
-        const r = await fetch(`${LINKPEEK_URL}/pair`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-lp-key': LINKPEEK_TOKEN }, body: JSON.stringify({ phone: body.phone || '' }), signal: AbortSignal.timeout(15000) });
+        const r = await fetch(`${LINKPEEK_URL}/gv/pair`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-lp-key': LINKPEEK_TOKEN }, body: JSON.stringify({ phone: body.phone || '' }), signal: AbortSignal.timeout(15000) });
         return json(res, r.status, await r.json());
       }
     } catch (e) {
