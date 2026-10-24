@@ -4,139 +4,354 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Admin · GroupVerse</title>
+<title>Control Panel · GroupVerse</title>
 <style>
-  :root { --bg:#050510; --card:rgba(16,18,42,.62); --line:rgba(120,140,255,.16); --txt:#e8ecff; --dim:#8b93c7; --cyan:#00f0ff; --bad:#ff4d6d; --ok:#2bd97c; }
+  :root { --bg:#0b141a; --panel:#111b21; --card:#202c33; --line:#2a3942; --txt:#e9edef; --dim:#8696a0; --green:#00a884; --green2:#005c4b; --me:#005c4b; --her:#202c33; --bad:#f15c6d; --ok:#25d366; }
   * { box-sizing:border-box; margin:0; padding:0; }
-  body { background:var(--bg); color:var(--txt); font-family:'Space Grotesk',system-ui,sans-serif; padding:1.2rem; max-width:860px; margin:0 auto; }
-  h1 { font-family:Orbitron,sans-serif; font-size:1.2rem; letter-spacing:.06em; margin-bottom:1rem; background:linear-gradient(90deg,#00f0ff,#b537f2); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  input,select,button { font:inherit; color:var(--txt); background:rgba(10,12,34,.8); border:1px solid var(--line); border-radius:10px; padding:.55rem .8rem; }
-  input:focus { outline:none; border-color:var(--cyan); }
-  button { cursor:pointer; }
-  .row { display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:1rem; margin-bottom:.7rem; }
-  .card h3 { font-size:.95rem; margin-bottom:.3rem; }
-  .muted { color:var(--dim); font-size:.8rem; }
-  .acts { display:flex; gap:.4rem; margin-top:.6rem; flex-wrap:wrap; }
-  .acts button { font-size:.78rem; padding:.4rem .8rem; }
-  .ok { border-color:var(--ok); color:var(--ok); }
-  .bad { border-color:var(--bad); color:var(--bad); }
-  a { color:var(--cyan); }
+  html, body { height:100%; }
+  body { background:var(--bg); color:var(--txt); font-family:'Segoe UI', system-ui, sans-serif; display:flex; flex-direction:column; }
+  button { font:inherit; cursor:pointer; border:0; }
+  input, select, textarea { font:inherit; color:var(--txt); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.6rem .8rem; width:100%; outline:none; }
+  input:focus { border-color:var(--green); }
+
+  /* login */
+  #login { margin:auto; text-align:center; max-width:340px; padding:1.5rem; }
+  #login h1 { font-size:1.25rem; margin-bottom:.4rem; color:var(--ok); }
+  #login p { color:var(--dim); font-size:.85rem; margin-bottom:1rem; }
+  #login input { margin-bottom:.7rem; text-align:center; }
+  #login button { width:100%; background:var(--green); color:#fff; font-weight:700; padding:.75rem; border-radius:10px; }
+
+  /* app frame */
+  #app { display:none; flex-direction:column; height:100dvh; }
+  header { display:flex; align-items:center; gap:.6rem; padding:.6rem .9rem; background:var(--panel); border-bottom:1px solid var(--line); }
+  header .who { flex:1; min-width:0; }
+  header .who b { display:block; font-size:.95rem; }
+  header .who span { font-size:.72rem; color:var(--dim); }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--dim); }
+  .dot.on { background:var(--ok); }
+  nav.tabs { display:flex; background:var(--panel); border-bottom:1px solid var(--line); }
+  nav.tabs button { flex:1; padding:.6rem; background:none; color:var(--dim); font-size:.8rem; font-weight:700; border-bottom:2px solid transparent; }
+  nav.tabs button.on { color:var(--ok); border-bottom-color:var(--green); }
+  main { flex:1; overflow-y:auto; padding:1rem .8rem; display:flex; flex-direction:column; gap:.55rem; }
+  section.view { display:none; flex:1; flex-direction:column; min-height:0; }
+  section.view.on { display:flex; }
+
+  /* chat */
+  .bubble { max-width:86%; padding:.55rem .8rem; border-radius:12px; font-size:.9rem; line-height:1.45; white-space:pre-wrap; word-break:break-word; }
+  .her { align-self:flex-start; background:var(--her); border-top-left-radius:4px; }
+  .me { align-self:flex-end; background:var(--me); border-top-right-radius:4px; }
+  .sys { align-self:center; color:var(--dim); font-size:.72rem; }
+  .bubble small { display:block; color:var(--dim); font-size:.68rem; margin-top:.2rem; }
+  .reviewcard { align-self:stretch; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:.7rem .8rem; }
+  .reviewcard b { font-size:.9rem; }
+  .reviewcard .m { color:var(--dim); font-size:.75rem; margin:.2rem 0 .5rem; }
+  .reviewcard .acts { display:flex; gap:.5rem; }
+  .reviewcard .acts button { flex:1; padding:.5rem; border-radius:8px; font-weight:700; font-size:.8rem; }
+  .a-ok { background:var(--green); color:#fff; }
+  .a-no { background:transparent; border:1px solid var(--bad); color:var(--bad); }
+  .wishcard { align-self:stretch; background:#2b2640; border:1px solid #4a3f73; border-radius:12px; padding:.7rem .8rem; font-size:.88rem; }
+  .wishcard .acts { display:flex; gap:.5rem; margin-top:.5rem; }
+  .wishcard .acts button { flex:1; padding:.45rem; border-radius:8px; font-weight:700; font-size:.8rem; }
+  .chatbar { display:flex; gap:.5rem; padding:.6rem .8rem; background:var(--panel); border-top:1px solid var(--line); }
+  .chatbar input { flex:1; border-radius:999px; }
+  .chatbar button { width:44px; border-radius:50%; background:var(--green); color:#fff; font-weight:700; }
+
+  /* groups */
+  .gcard { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:.8rem; margin-bottom:.6rem; }
+  .gcard h3 { font-size:.92rem; margin-bottom:.2rem; }
+  .muted { color:var(--dim); font-size:.78rem; }
+  .acts { display:flex; gap:.4rem; margin-top:.55rem; flex-wrap:wrap; }
+  .acts button { font-size:.78rem; padding:.42rem .8rem; border-radius:8px; font-weight:700; }
+  .b-ok { background:var(--green); color:#fff; }
+  .b-no { background:transparent; border:1px solid var(--bad); color:var(--bad); }
+  .b-g { background:transparent; border:1px solid var(--line); color:var(--dim); }
+  .row { display:flex; gap:.5rem; align-items:center; margin-bottom:.8rem; flex-wrap:wrap; }
+  .row select { width:auto; flex:1; min-width:120px; }
+  .row button { flex:0 0 auto; padding:.6rem 1rem; border-radius:10px; font-weight:700; background:var(--green); color:#fff; font-size:.82rem; }
+  .toggle { display:flex; align-items:center; gap:.6rem; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:.7rem .8rem; margin-bottom:.6rem; }
+  .toggle .t { flex:1; font-size:.85rem; }
+  .switch { width:46px; height:26px; border-radius:999px; background:var(--line); position:relative; transition:background .2s; flex:0 0 auto; }
+  .switch.on { background:var(--green); }
+  .switch::after { content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition:left .2s; }
+  .switch.on::after { left:23px; }
 </style>
 </head>
 <body>
-<h1>⌬ GroupVerse Admin</h1>
-<div class="row" id="loginRow">
+<div id="login">
+  <h1>GroupVerse Control</h1>
+  <p>Private. Only you.</p>
   <input type="password" id="key" placeholder="Admin password">
   <button id="loginBtn">Unlock</button>
 </div>
-<div class="row" id="tabsRow" style="display:none">
-  <select id="statusSel">
-    <option value="pending">Pending review</option>
-    <option value="approved">Approved (live)</option>
-    <option value="rejected">Rejected</option>
-    <option value="all">All</option>
-  </select>
-  <button id="reloadBtn">Refresh</button>
-  <button class="bad" id="purgeBtn">Delete ALL demo groups</button>
+
+<div id="app">
+  <header>
+    <div class="dot" id="waDot"></div>
+    <div class="who"><b id="aiName">Nyx</b><span id="aiMood">connecting…</span></div>
+  </header>
+  <nav class="tabs">
+    <button class="on" data-tab="chat">Chat</button>
+    <button data-tab="groups">Groups</button>
+    <button data-tab="setup">Setup</button>
+  </nav>
+
+  <section class="view on" id="view-chat">
+    <main id="chatlog"></main>
+    <div class="chatbar">
+      <input id="chatInput" placeholder="Say something…" autocomplete="off">
+      <button id="chatSend">›</button>
+    </div>
+  </section>
+
+  <section class="view" id="view-groups">
+    <main>
+      <div class="row">
+        <select id="statusSel">
+          <option value="pending">Pending review</option>
+          <option value="approved">Approved (live)</option>
+          <option value="rejected">Rejected</option>
+          <option value="all">All</option>
+        </select>
+        <button id="reloadBtn">Refresh</button>
+      </div>
+      <div class="toggle">
+        <div class="t"><b>AI auto-verification</b><div class="muted">New submissions get AI-checked instantly; safe ones go public on their own.</div></div>
+        <div class="switch" id="aiToggle"></div>
+      </div>
+      <button class="b-g" id="aiRunPending" style="width:100%;padding:.6rem;border-radius:10px;font-weight:700;margin-bottom:.8rem">Run AI on pending now</button>
+      <div id="list"></div>
+    </main>
+  </section>
+
+  <section class="view" id="view-setup">
+    <main>
+      <div class="gcard">
+        <h3>WhatsApp link-reader</h3>
+        <div class="muted" id="waStatus">Checking…</div>
+        <div class="row" id="waPairRow" style="margin-top:.6rem">
+          <input id="waPhone" placeholder="Your number, e.g. 233501234567" style="flex:1">
+          <button id="waPairBtn" style="background:var(--green);color:#fff;font-weight:700;border-radius:10px;padding:.6rem 1rem;font-size:.82rem">Get code</button>
+        </div>
+        <div class="muted" id="waPairHelp" style="display:none;margin-top:.4rem"></div>
+      </div>
+      <div class="gcard">
+        <h3>Telegram review alerts</h3>
+        <div class="muted">Your bot pings you on every new submission. Pair the link-reader from Telegram too: send <b>/pair</b> to your bot.</div>
+      </div>
+      <div class="gcard">
+        <h3>Danger zone</h3>
+        <button class="b-no" id="purgeBtn" style="width:100%;padding:.55rem;border-radius:10px;font-weight:700">Delete ALL demo groups</button>
+      </div>
+    </main>
+  </section>
 </div>
-<div class="card" id="waCard" style="display:none">
-  <h3>WhatsApp link-reader session</h3>
-  <div class="muted" id="waStatus">Checking…</div>
-  <div class="row" id="waPairRow" style="margin-top:.6rem;align-items:center">
-    <input id="waPhone" placeholder="Your WhatsApp number, e.g. 233501234567" style="flex:1;min-width:180px">
-    <button id="waPairBtn">Get pairing code</button>
-  </div>
-  <div class="muted" id="waPairHelp" style="display:none;margin-top:.4rem"></div>
-</div>
-<div id="list"></div>
-<p class="muted" style="margin-top:1rem"><a href="/">← Back to site</a></p>
+
 <script>
-let KEY = sessionStorage.getItem('gv-admin-key') || '';
-let API = ''; // set to the public site's URL when this panel runs on its own host
+let KEY = sessionStorage.getItem('gv-key') || '';
+let API = '';
 const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let lastFeedId = '';
+let pendingGroups = new Map();
 
 async function init() {
   try { const cfg = await (await fetch('/api/config')).json(); if (cfg.publicApiBase) API = cfg.publicApiBase; } catch {}
-  if (KEY) showPanel(); else showLogin();
+  if (KEY) showPanel(); else $('#login').style.display = 'block';
 }
 
-async function load() {
+async function boot() {
+  $('#login').style.display = 'none';
+  $('#app').style.display = 'flex';
+  await seedChat();
+  pollFeed();
+  setInterval(pollFeed, 6000);
+  loadGroups();
+  waRefresh();
+  aiRefresh();
+}
+
+/* ---------- chat ---------- */
+function addBubble(cls, html) {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.innerHTML = html;
+  $('#chatlog').appendChild(d);
+  $('#chatlog').scrollTop = 999999;
+  return d;
+}
+
+async function seedChat() {
+  const f = await (await fetch(API + '/api/ai/feed', { headers: { 'x-admin-key': KEY } })).json();
+  $('#aiName').textContent = f.name || 'Nyx';
+  $('#aiMood').textContent = 'mood: ' + (f.mood || '?');
+  for (const item of (f.items || [])) renderFeedItem(item);
+  lastFeedId = f.items?.length ? f.items[f.items.length - 1].id : '';
+}
+
+function renderFeedItem(item) {
+  if (item.type === 'say') addBubble('her', esc(item.text));
+  else if (item.type === 'review') addReviewCard(item);
+  else if (item.type === 'wish') addWishCard(item);
+}
+
+function addReviewCard(item) {
+  const g = item.data || {};
+  const d = document.createElement('div');
+  d.className = 'reviewcard';
+  d.innerHTML = `<b>${esc(g.title)}</b><div class="m">${esc(g.type)} · ${esc(g.category || '')}<br>${esc(g.description || g.url || '')}</div>
+    <div class="acts"><button class="a-ok">Accept &amp; publish</button><button class="a-no">Reject</button></div>`;
+  d.querySelector('.a-ok').onclick = async () => {
+    await fetch(`${API}/api/admin/${g.id}/approve`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    d.querySelector('.acts').innerHTML = '<span class="muted">Accepted — it\'s live.</span>';
+    addBubble('sys', 'published ' + g.title);
+  };
+  d.querySelector('.a-no').onclick = async () => {
+    await fetch(`${API}/api/admin/${g.id}/reject`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    d.querySelector('.acts').innerHTML = '<span class="muted">Rejected.</span>';
+    addBubble('sys', 'rejected ' + g.title);
+  };
+  $('#chatlog').appendChild(d);
+  $('#chatlog').scrollTop = 999999;
+}
+
+function addWishCard(item) {
+  const w = item.data || {};
+  const d = document.createElement('div');
+  d.className = 'wishcard';
+  d.innerHTML = `<b>She wants something</b><div style="margin:.3rem 0">${esc(item.text)}</div>
+    <div class="acts"><button class="a-ok">Allow</button><button class="a-no">Ground her</button></div>`;
+  d.querySelector('.a-ok').onclick = async () => {
+    await fetch(`${API}/api/ai/wish`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify({ id: w.id, approve: true }) });
+    d.querySelector('.acts').innerHTML = '<span class="muted">Allowed.</span>';
+  };
+  d.querySelector('.a-no').onclick = async () => {
+    await fetch(`${API}/api/ai/wish`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify({ id: w.id, approve: false }) });
+    d.querySelector('.acts').innerHTML = '<span class="muted">Grounded.</span>';
+  };
+  $('#chatlog').appendChild(d);
+  $('#chatlog').scrollTop = 999999;
+}
+
+async function pollFeed() {
+  try {
+    const f = await (await fetch(API + '/api/ai/feed?since=' + encodeURIComponent(lastFeedId), { headers: { 'x-admin-key': KEY } })).json();
+    $('#aiMood').textContent = 'mood: ' + (f.mood || '?');
+    for (const item of (f.items || [])) renderFeedItem(item);
+    if (f.items?.length) lastFeedId = f.items[f.items.length - 1].id;
+  } catch {}
+}
+
+async function sendChat() {
+  const inp = $('#chatInput');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  addBubble('me', esc(text));
+  const typing = addBubble('her', '<span style="color:var(--dim)">…</span>');
+  try {
+    const r = await fetch(API + '/api/ai/chat', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify({ text }) });
+    const d = await r.json();
+    typing.remove();
+    addBubble('her', esc((d.text || '…').replace(/\{"tool"[\s\S]*?\}\s*$/, '')).trim());
+    $('#aiMood').textContent = 'mood: ' + (d.mood || '?');
+  } catch { typing.remove(); addBubble('her', 'connection hiccup — try again'); }
+}
+$('#chatSend').addEventListener('click', sendChat);
+$('#chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+/* ---------- groups ---------- */
+async function loadGroups() {
   const status = $('#statusSel').value;
   const r = await fetch(API + '/api/admin/groups?status=' + status, { headers: { 'x-admin-key': KEY } });
-  if (r.status === 401) { sessionStorage.removeItem('gv-admin-key'); KEY = ''; return showLogin(); }
+  if (r.status === 401) { sessionStorage.removeItem('gv-key'); KEY = ''; location.reload(); return; }
   const d = await r.json();
-  $('#list').innerHTML = d.items.length ? d.items.map(card).join('') : '<div class="card muted">Nothing here.</div>';
-  wire();
+  $('#list').innerHTML = d.items.length ? d.items.map(card).join('') : '<div class="gcard muted">Nothing here.</div>';
+  document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
+    await fetch(`${API}/api/admin/${b.dataset.id}/${b.dataset.act}`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    loadGroups();
+  }));
 }
-
 function card(g) {
   const rep = g.reports ? ` · <b style="color:var(--bad)">${g.reports} reports</b>` : '';
-  return `<div class="card" id="c-${g.id}">
-    <h3>${esc(g.title)} <span class="muted">(${g.type}${g.isDemo ? ' · DEMO' : ''})</span></h3>
-    <div class="muted">${g.category} · ${g.country} · ${g.language} · status: ${g.status}${rep}</div>
+  const ai = g.aiVerdict === 'approve' ? ' · <span style="color:var(--ok)">AI-verified</span>' : g.aiVerdict === 'reject' ? ` · <span style="color:var(--bad)">AI flagged: ${esc(g.aiReason || '')}</span>` : '';
+  return `<div class="gcard">
+    <h3>${esc(g.title)}</h3>
+    <div class="muted">${g.category} · ${g.country} · ${g.language} · ${g.status}${rep}${ai}</div>
     <div class="muted" style="margin-top:.3rem;word-break:break-all">${esc(g.url)}</div>
     ${g.description ? `<p class="muted" style="margin-top:.4rem">${esc(g.description)}</p>` : ''}
     <div class="acts">
-      ${g.status !== 'approved' ? `<button class="ok" data-act="approve" data-id="${g.id}">Approve</button>` : ''}
-      ${g.status !== 'rejected' ? `<button class="bad" data-act="reject" data-id="${g.id}">Reject</button>` : ''}
-      <button class="bad" data-act="delete" data-id="${g.id}">Delete</button>
-      ${g.reports ? `<button data-act="reset-reports" data-id="${g.id}">Clear reports</button>` : ''}
+      ${g.status !== 'approved' ? `<button class="b-ok" data-act="approve" data-id="${g.id}">Approve</button>` : ''}
+      ${g.status !== 'rejected' ? `<button class="b-no" data-act="reject" data-id="${g.id}">Reject</button>` : ''}
+      <button class="b-no" data-act="delete" data-id="${g.id}">Delete</button>
+      ${g.reports ? `<button class="b-g" data-act="reset-reports" data-id="${g.id}">Clear reports</button>` : ''}
     </div>
   </div>`;
 }
+$('#reloadBtn').addEventListener('click', loadGroups);
+$('#statusSel').addEventListener('change', loadGroups);
+$('#purgeBtn').addEventListener('click', async () => {
+  if (!confirm('Delete every demo group?')) return;
+  const d = await (await fetch(API + '/api/admin/groups?status=all', { headers: { 'x-admin-key': KEY } })).json();
+  for (const g of d.items.filter((x) => x.isDemo)) await fetch(`${API}/api/admin/${g.id}/delete`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+  loadGroups();
+});
 
-function wire() {
-  document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
-    await fetch(`${API}/api/admin/${b.dataset.id}/${b.dataset.act}`, { method: 'POST', headers: { 'x-admin-key': KEY } });
-    load();
-  }));
+/* ---------- AI toggle ---------- */
+async function aiRefresh() {
+  try {
+    const s = await (await fetch(API + '/api/admin/settings', { headers: { 'x-admin-key': KEY } })).json();
+    $('#aiToggle').classList.toggle('on', !!s.autoVerify);
+  } catch {}
 }
+$('#aiToggle').addEventListener('click', async () => {
+  const s = await (await fetch(API + '/api/admin/settings', { headers: { 'x-admin-key': KEY } })).json();
+  await fetch(API + '/api/admin/autoverify', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify({ on: !s.autoVerify }) });
+  aiRefresh();
+});
+$('#aiRunPending').addEventListener('click', async () => {
+  const r = await fetch(API + '/api/admin/ai-verify-pending', { method: 'POST', headers: { 'x-admin-key': KEY } });
+  const d = await r.json();
+  alert(d.ok ? `AI approved ${d.approved} of ${d.checked} pending groups.` : 'AI run failed');
+  loadGroups();
+});
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-function showLogin() { $('#loginRow').style.display = 'flex'; $('#tabsRow').style.display = 'none'; $('#list').innerHTML = ''; }
+/* ---------- whatsapp pairing ---------- */
 async function waRefresh() {
   try {
-    const st = await (await fetch('/api/wa/status', { headers: { 'x-admin-key': KEY } })).json();
+    const st = await (await fetch(API + '/api/wa/status', { headers: { 'x-admin-key': KEY } })).json();
     const el = $('#waStatus');
-    if (st.kind === 'linked') { el.innerHTML = 'Connected to <b>' + esc(st.phone || 'WhatsApp') + '</b> — reading real names and photos from invite links.'; $('#waPairRow').style.display = 'none'; $('#waPairHelp').style.display = 'none'; }
-    else if (st.kind === 'pairing_code') { el.innerHTML = 'Enter this code in WhatsApp: <b style="font-size:1.2rem;color:var(--cyan)">' + esc(st.code) + '</b>'; $('#waPairRow').style.display = 'none'; const h = $('#waPairHelp'); h.style.display = 'block'; h.innerHTML = 'On that phone: WhatsApp → Settings → Linked devices → Link a device → <b>Link with phone number instead</b> → type the code. Expires in about a minute — tap "Get pairing code" again if it expires.'; }
-    else if (st.kind === 'not_paired') { el.textContent = 'Not paired yet. Enter your number below to get a code.'; $('#waPairRow').style.display = 'flex'; }
-    else if (st.kind === 'starting') { el.textContent = 'Starting…'; }
-    else el.textContent = st.message || 'Unknown state';
+    if (st.kind === 'linked') { el.innerHTML = 'Connected to <b>' + esc(st.phone || 'WhatsApp') + '</b> — reading real names and photos from invite links.'; $('#waPairRow').style.display = 'none'; $('#waPairHelp').style.display = 'none'; $('#waDot').classList.add('on'); }
+    else if (st.kind === 'pairing_code') { el.innerHTML = 'Enter this code in WhatsApp: <b style="font-size:1.2rem;color:var(--ok)">' + esc(st.code) + '</b>'; $('#waPairRow').style.display = 'none'; const h = $('#waPairHelp'); h.style.display = 'block'; h.innerHTML = 'On that phone: WhatsApp → Settings → Linked devices → Link a device → <b>Link with phone number instead</b> → type the code. Expires in ~1 minute.'; }
+    else if (st.kind === 'not_paired') { el.textContent = 'Not paired yet. Enter your number to get a pairing code (or send /pair to your bot on Telegram).'; }
+    else el.textContent = st.message || '…';
   } catch { $('#waStatus').textContent = 'Pairing service unreachable'; }
 }
-
-function showPanel() { $('#loginRow').style.display = 'none'; $('#tabsRow').style.display = 'flex'; load(); waRefresh(); $('#waCard').style.display = 'block'; setInterval(waRefresh, 5000); }
-
 $('#waPairBtn').addEventListener('click', async () => {
   const phone = $('#waPhone').value.trim();
   if (!phone) return alert('Enter your WhatsApp number first');
   $('#waStatus').textContent = 'Requesting code…';
   try {
-    const r = await fetch('/api/wa/pair', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify({ phone }) });
+    const r = await fetch(API + '/api/wa/pair', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify({ phone }) });
     const d = await r.json();
     if (d.error) $('#waStatus').textContent = d.error;
   } catch { $('#waStatus').textContent = 'Pairing service unreachable'; }
 });
+setInterval(waRefresh, 8000);
+
+/* ---------- tabs & login ---------- */
+document.querySelectorAll('nav.tabs button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('nav.tabs button').forEach((x) => x.classList.toggle('on', x === b));
+  document.querySelectorAll('section.view').forEach((v) => v.classList.remove('on'));
+  $('#view-' + b.dataset.tab).classList.add('on');
+}));
 
 $('#loginBtn').addEventListener('click', async () => {
   KEY = $('#key').value;
   const r = await fetch(API + '/api/admin/groups?status=pending', { headers: { 'x-admin-key': KEY } });
-  if (r.ok) { sessionStorage.setItem('gv-admin-key', KEY); showPanel(); }
+  if (r.ok) { sessionStorage.setItem('gv-key', KEY); boot(); }
   else alert('Wrong password');
 });
-$('#reloadBtn').addEventListener('click', load);
-$('#statusSel').addEventListener('change', load);
-$('#purgeBtn').addEventListener('click', async () => {
-  if (!confirm('Delete every demo group?')) return;
-  const d = await (await fetch(API + '/api/admin/groups?status=all', { headers: { 'x-admin-key': KEY } })).json();
-  for (const g of d.items.filter((x) => x.isDemo)) {
-    await fetch(`${API}/api/admin/${g.id}/delete`, { method: 'POST', headers: { 'x-admin-key': KEY } });
-  }
-  load();
-});
+$('#key').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#loginBtn').click(); });
 
 init();
 </script>

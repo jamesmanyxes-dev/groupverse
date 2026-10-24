@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import https from 'node:https';
+import { createAI } from './ai.js';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,19 +39,23 @@ const LINKPEEK_URL = (process.env.LINKPEEK_URL || '').replace(/\/$/, '');
 const LINKPEEK_TOKEN = process.env.LINKPEEK_TOKEN || '';
 const TG_BOT_TOKEN = process.env.GV_TG_BOT_TOKEN || '';
 const TG_CHAT_ID = process.env.GV_TG_CHAT_ID || '';
+// The admin panel lives on its own host and calls this API from the browser;
+// CORS must allow exactly that origin (and nothing else).
+const ADMIN_ALLOW_ORIGIN = (process.env.ADMIN_ALLOW_ORIGIN || '').replace(/\/$/, '');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 /* ---------------------------------------------------------------- database */
 
-let db = { groups: [] };
+let db = { groups: [], settings: { autoVerify: false } };
 let saveTimer = null;
 
 function loadDb() {
   try {
     db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     if (!Array.isArray(db.groups)) db.groups = [];
+    if (typeof db.settings !== 'object' || db.settings === null) db.settings = { autoVerify: false };
   } catch {
-    db = { groups: [] };
+    db = { groups: [], settings: { autoVerify: false } };
     seed();
     saveNow();
   }
@@ -108,6 +113,17 @@ function seed() {
 }
 
 loadDb();
+
+const AI = createAI({
+  dataDir: DATA_DIR,
+  notify: notifyTelegram,
+  getStats: () => ({
+    groups: db.groups.filter((g) => g.status === 'approved').length,
+    joins: db.groups.reduce((s, g) => s + (g.clicks || 0), 0),
+  }),
+  listPending: () => db.groups.filter((g) => g.status === 'pending').length,
+});
+AI.start();
 
 /* ------------------------------------------------------------- taxonomies */
 
@@ -287,6 +303,36 @@ async function peekLink(url, type) {
   return out;
 }
 
+const AI_MOD_SYS = 'You moderate submissions for a group-link directory site (WhatsApp/Telegram/Discord/Signal invite links). Approve normal communities. Reject scams, phishing, fraud, illegal goods, CSAM, explicit sexual content, malware, terror/hate. If unsure, choose review. Reply ONLY compact JSON: {"verdict":"approve|reject|review","reason":"max 12 words"}';
+
+async function aiCheckGroup(g) {
+  const orKey = process.env.GV_OPENROUTER_KEY || '';
+  const groqKey = process.env.GV_GROQ_KEY || '';
+  const urls = [];
+  if (orKey) urls.push(`https://openrouter.ai/api/v1/chat/completions|meta-llama/llama-3.3-70b-instruct|Bearer ${orKey}`);
+  if (groqKey) urls.push(`https://api.groq.com/openai/v1/chat/completions|llama-3.3-70b-versatile|Bearer ${groqKey}`);
+  urls.push('https://api.openai.com/v1/chat/completions|gpt-4o-mini|Bearer sentinel');
+  if (LINKPEEK_URL && LINKPEEK_TOKEN) urls.push(`${LINKPEEK_URL}/aicheck|x-lp-key: ${LINKPEEK_TOKEN}`);
+  for (const u of urls) {
+    try {
+      if (u.includes('/aicheck')) {
+        const [url, hdr] = u.split('|');
+        const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', [hdr.split(':')[0]]: hdr.split(': ')[1] }, body: JSON.stringify({ title: g.title, description: g.description, type: g.type, url: g.url, category: g.category }), signal: AbortSignal.timeout(30000) });
+        if (r.ok) return await r.json();
+        continue;
+      }
+      const [url, model, auth] = u.split('|');
+      const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: auth }, body: JSON.stringify({ model, messages: [ { role: 'system', content: AI_MOD_SYS }, { role: 'user', content: `Title: ${g.title}\nPlatform: ${g.type}\nCategory: ${g.category}\nDescription: ${g.description || '(none)'}\nLink: ${g.url}` } ], max_tokens: 80, temperature: 0 }), signal: AbortSignal.timeout(30000) });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const m = (d.choices?.[0]?.message?.content || '').match(/\{[\s\S]*\}/);
+      const parsed = m ? JSON.parse(m[0]) : null;
+      if (parsed && ['approve', 'reject', 'review'].includes(parsed.verdict)) return parsed;
+    } catch { continue; }
+  }
+  return { verdict: 'review', reason: 'AI unreachable' };
+}
+
 function notifyTelegram(text) {
   if (!TG_BOT_TOKEN || !TG_CHAT_ID) return;
   const payload = JSON.stringify({ chat_id: TG_CHAT_ID, text, disable_web_page_preview: true });
@@ -410,6 +456,23 @@ async function handleApi(req, res, pathname, query, ip) {
     const group = { id, slug: slugify(title, id), title, url, type, category, country, language, tags, description, imageUrl: stored, status: 'pending', clicks: 0, views: 0, reports: 0, createdAt: Date.now(), ip };
     db.groups.push(group);
     save();
+    if (db.settings.autoVerify) {
+      const v = await aiCheckGroup(group);
+      group.aiVerdict = v.verdict;
+      group.aiReason = v.reason || '';
+      if (v.verdict === 'approve') {
+        group.status = 'approved';
+        save();
+        notifyTelegram('Auto-verified and LIVE: ' + title + '\nLink: ' + url);
+        return json(res, 200, { ok: true, message: 'Verified and live! Your group is now public.', slug: group.slug });
+      }
+      if (v.verdict === 'reject') {
+        save();
+        notifyTelegram('AI rejected a submission: ' + title + '\nReason: ' + (v.reason || 'unknown') + '\nLink: ' + url);
+        return json(res, 200, { ok: true, message: 'Thanks for submitting. Your group is being checked by our team.', slug: group.slug });
+      }
+    }
+    AI.onSubmission(group).catch(() => {});
     notifyTelegram('New group requesting review\n\nName: ' + title + '\nPlatform: ' + type + '\nLink: ' + url + (stored ? '\nPhoto: saved to site' : '') + '\n\nApprove or reject it in your control panel.');
     return json(res, 200, { ok: true, message: 'Requesting review… your group is in the queue.', slug: group.slug });
   }
@@ -437,6 +500,25 @@ async function handleApi(req, res, pathname, query, ip) {
     return json(res, 200, { ok: true, message: 'Thanks, our moderators will check it.' });
   }
 
+  /* ---- companion AI ---- */
+  if (pathname.startsWith('/api/ai/')) {
+    const key = req.headers['x-admin-key'] || '';
+    if (key !== ADMIN_PASSWORD) return json(res, 401, { error: 'Wrong admin password' });
+    if (req.method === 'POST' && pathname === '/api/ai/chat') {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const out = await AI.chat(String(body.text || '').slice(0, 2000));
+      return json(res, 200, out);
+    }
+    if (req.method === 'GET' && pathname === '/api/ai/feed') {
+      return json(res, 200, AI.feed(query.get('since') || ''));
+    }
+    if (req.method === 'POST' && pathname === '/api/ai/wish') {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const ok = AI.answerWish(String(body.id || ''), !!body.approve);
+      return json(res, 200, { ok });
+    }
+  }
+
   /* ---- stats ticker ---- */
   if (req.method === 'GET' && pathname === '/api/stats') {
     const approved = db.groups.filter((g) => g.status === 'approved');
@@ -456,6 +538,29 @@ async function handleApi(req, res, pathname, query, ip) {
       const status = query.get('status') || 'pending';
       const list = db.groups.filter((g) => (status === 'all' ? true : g.status === status)).sort((a, b) => b.createdAt - a.createdAt);
       return json(res, 200, { items: list });
+    }
+
+    if (req.method === 'GET' && pathname === '/api/admin/settings') {
+      return json(res, 200, { autoVerify: !!db.settings.autoVerify });
+    }
+    if (req.method === 'POST' && pathname === '/api/admin/autoverify') {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      db.settings.autoVerify = !!body.on;
+      save();
+      return json(res, 200, { ok: true, autoVerify: db.settings.autoVerify });
+    }
+    if (req.method === 'POST' && pathname === '/api/admin/ai-verify-pending') {
+      const pend = db.groups.filter((g) => g.status === 'pending');
+      let approved = 0;
+      for (const g of pend) {
+        const v = await aiCheckGroup(g);
+        g.aiVerdict = v.verdict;
+        g.aiReason = v.reason || '';
+        if (v.verdict === 'approve') { g.status = 'approved'; approved++; }
+        save();
+      }
+      notifyTelegram(`AI verification ran: ${approved}/${pend.length} pending groups approved automatically.`);
+      return json(res, 200, { ok: true, checked: pend.length, approved });
     }
 
     const actionMatch = pathname.match(/^\/api\/admin\/([a-z0-9-]+)\/(approve|reject|delete|reset-reports)$/);
@@ -508,6 +613,16 @@ const server = http.createServer(async (req, res) => {
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'x';
 
   try {
+    // CORS for the admin panel on its own host
+    const reqOrigin = req.headers.origin || '';
+    if (ADMIN_ALLOW_ORIGIN && reqOrigin && reqOrigin.toLowerCase().includes(ADMIN_ALLOW_ORIGIN.replace(/^https?:\/\//, ''))) {
+      res.setHeader('access-control-allow-origin', reqOrigin);
+      res.setHeader('vary', 'Origin');
+      res.setHeader('access-control-allow-headers', 'content-type, x-admin-key');
+      res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+      if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+    }
+
     // locally stored group photos
     if (req.method === 'GET' && pathname.startsWith('/i/')) {
       const name = pathname.slice(3).replace(/[^a-z0-9.]/gi, '');
