@@ -37,27 +37,39 @@
   section.view.on { display:flex; }
 
   /* chat */
-  .bubble { max-width:86%; padding:.55rem .8rem; border-radius:12px; font-size:.9rem; line-height:1.45; white-space:pre-wrap; word-break:break-word; }
-  .her { align-self:flex-start; background:var(--her); border-top-left-radius:4px; }
-  .me { align-self:flex-end; background:var(--me); border-top-right-radius:4px; }
-  .sys { align-self:center; color:var(--dim); font-size:.72rem; }
+  .bubble { max-width:86%; padding:.55rem .8rem; border-radius:14px; font-size:.9rem; line-height:1.45; white-space:pre-wrap; word-break:break-word; animation: pop .28s cubic-bezier(.34,1.56,.64,1) both; }
+  .her { align-self:flex-start; background:var(--her); border-bottom-left-radius:4px; }
+  .me { align-self:flex-end; background:var(--me); border-bottom-right-radius:4px; }
+  @keyframes pop { from { opacity:0; transform:translateY(8px) scale(.96); } to { opacity:1; transform:none; } }
+  .typing { display:inline-flex; gap:4px; padding:.2rem .1rem; }
+  .typing i { width:6px; height:6px; border-radius:50%; background:var(--dim); animation: bounce 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay:.15s; }
+  .typing i:nth-child(3) { animation-delay:.3s; }
+  @keyframes bounce { 0%,60%,100% { transform:none; opacity:.4; } 30% { transform:translateY(-4px); opacity:1; } }
+  .sys { align-self:center; color:var(--dim); font-size:.72rem; animation: pop .3s ease both; }
   .bubble small { display:block; color:var(--dim); font-size:.68rem; margin-top:.2rem; }
-  .reviewcard { align-self:stretch; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:.7rem .8rem; }
+  .reviewcard, .wishcard { animation: slidein .35s cubic-bezier(.34,1.4,.64,1) both; }
+  @keyframes slidein { from { opacity:0; transform:translateY(14px) scale(.97); } to { opacity:1; transform:none; } }
+  .reviewcard button, .wishcard button, .acts button { transition: transform .12s, filter .15s, opacity .15s; }
+  .reviewcard button:active, .wishcard button:active, .acts button:active { transform:scale(.94); }
+  .acts button:hover, .reviewcard button:hover, .wishcard button:hover { filter:brightness(1.12); }
+  .reviewcard .acts button:disabled, .wishcard .acts button:disabled { opacity:.4; cursor:default; }
+  .flash { animation: flash 1.2s ease; }
+  @keyframes flash { 0%,100% { box-shadow:none; } 30% { box-shadow:0 0 0 2px var(--green); } }
+  .reviewcard, .wishcard { align-self:stretch; border-radius:12px; padding:.7rem .8rem; }
+  .reviewcard { background:var(--card); border:1px solid var(--line); }
   .reviewcard b { font-size:.9rem; }
   .reviewcard .m { color:var(--dim); font-size:.75rem; margin:.2rem 0 .5rem; }
   .reviewcard .acts { display:flex; gap:.5rem; }
   .reviewcard .acts button { flex:1; padding:.5rem; border-radius:8px; font-weight:700; font-size:.8rem; }
   .a-ok { background:var(--green); color:#fff; }
   .a-no { background:transparent; border:1px solid var(--bad); color:var(--bad); }
-  .wishcard { align-self:stretch; background:#2b2640; border:1px solid #4a3f73; border-radius:12px; padding:.7rem .8rem; font-size:.88rem; }
+  .wishcard { background:#2b2640; border:1px solid #4a3f73; font-size:.88rem; }
   .wishcard .acts { display:flex; gap:.5rem; margin-top:.5rem; }
   .wishcard .acts button { flex:1; padding:.45rem; border-radius:8px; font-weight:700; font-size:.8rem; }
-  .chatbar { display:flex; gap:.5rem; padding:.6rem .8rem; background:var(--panel); border-top:1px solid var(--line); }
-  .chatbar input { flex:1; border-radius:999px; }
-  .chatbar button { width:44px; border-radius:50%; background:var(--green); color:#fff; font-weight:700; }
-
   /* groups */
-  .gcard { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:.8rem; margin-bottom:.6rem; }
+  /* groups */
+  .gcard { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:.8rem; margin-bottom:.6rem; animation: slidein .3s ease both; }
   .gcard h3 { font-size:.92rem; margin-bottom:.2rem; }
   .muted { color:var(--dim); font-size:.78rem; }
   .acts { display:flex; gap:.4rem; margin-top:.55rem; flex-wrap:wrap; }
@@ -200,12 +212,15 @@ function addReviewCard(item) {
   d.className = 'reviewcard';
   d.innerHTML = `<b>${esc(g.title)}</b><div class="m">${esc(g.type)} · ${esc(g.category || '')}<br>${esc(g.description || g.url || '')}</div>
     <div class="acts"><button class="a-ok">Accept &amp; publish</button><button class="a-no">Reject</button></div>`;
-  d.querySelector('.a-ok').onclick = async () => {
+  d.querySelector('.a-ok').onclick = async (e) => {
+    e.target.disabled = true;
     await fetch(`${API}/api/admin/${g.id}/approve`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    d.classList.add('flash');
     d.querySelector('.acts').innerHTML = '<span class="muted">Accepted — it\'s live.</span>';
     addBubble('sys', 'published ' + g.title);
   };
-  d.querySelector('.a-no').onclick = async () => {
+  d.querySelector('.a-no').onclick = async (e) => {
+    e.target.disabled = true;
     await fetch(`${API}/api/admin/${g.id}/reject`, { method: 'POST', headers: { 'x-admin-key': KEY } });
     d.querySelector('.acts').innerHTML = '<span class="muted">Rejected.</span>';
     addBubble('sys', 'rejected ' + g.title);
@@ -247,7 +262,7 @@ async function sendChat() {
   if (!text) return;
   inp.value = '';
   addBubble('me', esc(text));
-  const typing = addBubble('her', '<span style="color:var(--dim)">…</span>');
+  const typing = addBubble('her', '<span class="typing"><i></i><i></i><i></i></span>');
   try {
     const r = await fetch(API + '/api/ai/chat', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify({ text }) });
     const d = await r.json();
