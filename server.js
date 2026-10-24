@@ -33,6 +33,11 @@ const ADMIN_HOST = (process.env.ADMIN_HOST || '').toLowerCase();
 // On the admin-only host, the panel must control the PUBLIC site's database,
 // not this service's own copy. This env tells the panel where the public API lives.
 const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+// WhatsApp LinkPeek session (pair-code linked): real name + DP for any invite link.
+const LINKPEEK_URL = (process.env.LINKPEEK_URL || '').replace(/\/$/, '');
+const LINKPEEK_TOKEN = process.env.LINKPEEK_TOKEN || '';
+const TG_BOT_TOKEN = process.env.GV_TG_BOT_TOKEN || '';
+const TG_CHAT_ID = process.env.GV_TG_CHAT_ID || '';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 /* ---------------------------------------------------------------- database */
@@ -252,6 +257,22 @@ function metaTag(html, prop) {
 
 async function peekLink(url, type) {
   if (!validLink(type, url)) return {};
+  // Preferred: the pair-code linked WhatsApp session knows the REAL name + DP.
+  if (type === 'whatsapp' && LINKPEEK_URL && LINKPEEK_TOKEN) {
+    try {
+      const r = await fetch(`${LINKPEEK_URL}/peek?url=${encodeURIComponent(url)}`, { headers: { 'x-lp-key': LINKPEEK_TOKEN }, signal: AbortSignal.timeout(15000) });
+      if (r.ok) {
+        const m = await r.json();
+        if (m.ok) {
+          const out = {};
+          if (m.name) out.title = m.name;
+          if (m.description) out.description = m.description;
+          if (m.imageUrl) out.imageUrl = new URL(m.imageUrl, LINKPEEK_URL).href;
+          return out;
+        }
+      }
+    } catch { /* fall through to page scrape */ }
+  }
   const html = await fetchPage(url);
   if (!html) return {};
   let image = metaTag(html, 'og:image');
@@ -264,6 +285,15 @@ async function peekLink(url, type) {
   if (title && title.length >= 3) out.title = title.slice(0, 80);
   if (desc && desc.length > 10 && !/come chat|group invite/i.test(desc)) out.description = desc.slice(0, 1000);
   return out;
+}
+
+function notifyTelegram(text) {
+  if (!TG_BOT_TOKEN || !TG_CHAT_ID) return;
+  const payload = JSON.stringify({ chat_id: TG_CHAT_ID, text, disable_web_page_preview: true });
+  const req = https.request({ hostname: 'api.telegram.org', path: `/bot${TG_BOT_TOKEN}/sendMessage`, method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }, timeout: 8000 }, () => {});
+  req.on('error', () => {});
+  req.on('timeout', () => req.destroy());
+  req.end(payload);
 }
 
 /* ------------------------------------------------------------------- api */
@@ -324,6 +354,25 @@ async function handleApi(req, res, pathname, query, ip) {
     return json(res, 200, { group: publicGroup(g), related });
   }
 
+  /* ---- WhatsApp session status + pairing (admin panel controls this) ---- */
+  if (pathname.startsWith('/api/wa/') && LINKPEEK_URL && LINKPEEK_TOKEN) {
+    const key = req.headers['x-admin-key'] || '';
+    if (key !== ADMIN_PASSWORD) return json(res, 401, { error: 'Wrong admin password' });
+    try {
+      if (req.method === 'GET' && pathname === '/api/wa/status') {
+        const r = await fetch(`${LINKPEEK_URL}/status`, { headers: { 'x-lp-key': LINKPEEK_TOKEN }, signal: AbortSignal.timeout(8000) });
+        return json(res, r.status, await r.json());
+      }
+      if (req.method === 'POST' && pathname === '/api/wa/pair') {
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const r = await fetch(`${LINKPEEK_URL}/pair`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-lp-key': LINKPEEK_TOKEN }, body: JSON.stringify({ phone: body.phone || '' }), signal: AbortSignal.timeout(15000) });
+        return json(res, r.status, await r.json());
+      }
+    } catch (e) {
+      return json(res, 502, { error: 'LinkPeek service unreachable' });
+    }
+  }
+
   /* ---- peek at an invite link for auto-fill (photo, name, info) ---- */
   if (req.method === 'GET' && pathname === '/api/peek') {
     const url = safeStr(query.get('url') || '', 300);
@@ -361,6 +410,7 @@ async function handleApi(req, res, pathname, query, ip) {
     const group = { id, slug: slugify(title, id), title, url, type, category, country, language, tags, description, imageUrl: stored, status: 'pending', clicks: 0, views: 0, reports: 0, createdAt: Date.now(), ip };
     db.groups.push(group);
     save();
+    notifyTelegram('New group requesting review\n\nName: ' + title + '\nPlatform: ' + type + '\nLink: ' + url + (stored ? '\nPhoto: saved to site' : '') + '\n\nApprove or reject it in your control panel.');
     return json(res, 200, { ok: true, message: 'Requesting review… your group is in the queue.', slug: group.slug });
   }
 

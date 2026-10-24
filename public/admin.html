@@ -40,6 +40,15 @@
   <button id="reloadBtn">Refresh</button>
   <button class="bad" id="purgeBtn">Delete ALL demo groups</button>
 </div>
+<div class="card" id="waCard" style="display:none">
+  <h3>WhatsApp link-reader session</h3>
+  <div class="muted" id="waStatus">Checking…</div>
+  <div class="row" id="waPairRow" style="margin-top:.6rem;align-items:center">
+    <input id="waPhone" placeholder="Your WhatsApp number, e.g. 233501234567" style="flex:1;min-width:180px">
+    <button id="waPairBtn">Get pairing code</button>
+  </div>
+  <div class="muted" id="waPairHelp" style="display:none;margin-top:.4rem"></div>
+</div>
 <div id="list"></div>
 <p class="muted" style="margin-top:1rem"><a href="/">← Back to site</a></p>
 <script>
@@ -87,7 +96,30 @@ function wire() {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 function showLogin() { $('#loginRow').style.display = 'flex'; $('#tabsRow').style.display = 'none'; $('#list').innerHTML = ''; }
-function showPanel() { $('#loginRow').style.display = 'none'; $('#tabsRow').style.display = 'flex'; load(); }
+async function waRefresh() {
+  try {
+    const st = await (await fetch('/api/wa/status', { headers: { 'x-admin-key': KEY } })).json();
+    const el = $('#waStatus');
+    if (st.kind === 'linked') { el.innerHTML = 'Connected to <b>' + esc(st.phone || 'WhatsApp') + '</b> — reading real names and photos from invite links.'; $('#waPairRow').style.display = 'none'; $('#waPairHelp').style.display = 'none'; }
+    else if (st.kind === 'pairing_code') { el.innerHTML = 'Enter this code in WhatsApp: <b style="font-size:1.2rem;color:var(--cyan)">' + esc(st.code) + '</b>'; $('#waPairRow').style.display = 'none'; const h = $('#waPairHelp'); h.style.display = 'block'; h.innerHTML = 'On that phone: WhatsApp → Settings → Linked devices → Link a device → <b>Link with phone number instead</b> → type the code. Expires in about a minute — tap "Get pairing code" again if it expires.'; }
+    else if (st.kind === 'not_paired') { el.textContent = 'Not paired yet. Enter your number below to get a code.'; $('#waPairRow').style.display = 'flex'; }
+    else if (st.kind === 'starting') { el.textContent = 'Starting…'; }
+    else el.textContent = st.message || 'Unknown state';
+  } catch { $('#waStatus').textContent = 'Pairing service unreachable'; }
+}
+
+function showPanel() { $('#loginRow').style.display = 'none'; $('#tabsRow').style.display = 'flex'; load(); waRefresh(); $('#waCard').style.display = 'block'; setInterval(waRefresh, 5000); }
+
+$('#waPairBtn').addEventListener('click', async () => {
+  const phone = $('#waPhone').value.trim();
+  if (!phone) return alert('Enter your WhatsApp number first');
+  $('#waStatus').textContent = 'Requesting code…';
+  try {
+    const r = await fetch('/api/wa/pair', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify({ phone }) });
+    const d = await r.json();
+    if (d.error) $('#waStatus').textContent = d.error;
+  } catch { $('#waStatus').textContent = 'Pairing service unreachable'; }
+});
 
 $('#loginBtn').addEventListener('click', async () => {
   KEY = $('#key').value;
