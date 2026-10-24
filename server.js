@@ -27,6 +27,9 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
 const ADMIN_PATH = (process.env.ADMIN_PATH || 'admin').replace(/^\/+|\/+$/g, ''); // her secret link: /<ADMIN_PATH>
 const SITE_NAME = process.env.SITE_NAME || 'GroupVerse';
 const ADSENSE_CLIENT = process.env.ADSENSE_CLIENT || '';
+// Optional second domain used ONLY for the admin panel (e.g. admin-xxx.up.railway.app).
+// When set, that host serves the admin panel on every path; the public host keeps the secret path.
+const ADMIN_HOST = (process.env.ADMIN_HOST || '').toLowerCase();
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 /* ---------------------------------------------------------------- database */
@@ -159,6 +162,54 @@ function rateLimited(ip, limit, windowMs) {
 function publicGroup(g) {
   const { id, slug, title, url, imageUrl, type, category, country, language, tags, description, clicks, views, createdAt } = g;
   return { id, slug, title, url, imageUrl, type, category, country, language, tags, description, clicks, views, createdAt };
+}
+
+/* -------- group photo storage: download images locally so links never expire -------- */
+const IMG_DIR = path.join(DATA_DIR, 'imgs');
+const IMG_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
+
+function downloadImage(urlStr) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    try {
+      const req = https.get(urlStr, { timeout: 10000, headers: { 'user-agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36' } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          return done(downloadImage(new URL(res.headers.location, urlStr).href));
+        }
+        if (res.statusCode !== 200) { res.resume(); return done(null); }
+        const chunks = [];
+        let size = 0;
+        res.on('data', (c) => { size += c.length; if (size > 3_000_000) { req.destroy(); done(null); } else chunks.push(c); });
+        res.on('end', () => done(Buffer.concat(chunks)));
+        res.on('error', () => done(null));
+      });
+      req.on('timeout', () => { req.destroy(); done(null); });
+      req.on('error', () => done(null));
+    } catch { done(null); }
+  });
+}
+
+function sniffImage(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8) return '.jpg';
+  if (buf[0] === 0x89 && buf[1] === 0x50) return '.png';
+  if (buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WEBP') return '.webp';
+  if (buf[0] === 0x47 && buf[1] === 0x49) return '.gif';
+  return null;
+}
+
+async function storeImage(urlStr) {
+  if (!urlStr || !/^https?:\/\//.test(urlStr)) return '';
+  const buf = await downloadImage(urlStr);
+  const ext = sniffImage(buf);
+  if (!ext || !buf) return '';
+  fs.mkdirSync(IMG_DIR, { recursive: true });
+  const name = crypto.createHash('sha256').update(urlStr).digest('hex').slice(0, 20) + ext;
+  const file = path.join(IMG_DIR, name);
+  if (!fs.existsSync(file)) fs.writeFileSync(file, buf);
+  return '/i/' + name;
 }
 
 /* -------- link metadata (group photo / name) -------- */
@@ -298,8 +349,11 @@ async function handleApi(req, res, pathname, query, ip) {
     if (db.groups.some((g) => g.url === url && g.status !== 'rejected')) return json(res, 400, { error: 'This group link was already submitted.' });
 
     const id = uid();
+    // Prefer a pasted photo link; otherwise use what the link auto-fetch found. Always store locally.
     const userImage = safeStr(body.imageUrl, 1000);
-    const group = { id, slug: slugify(title, id), title, url, type, category, country, language, tags, description, imageUrl: /^https?:\/\//.test(userImage) ? userImage : safeStr(body.fetchedImageUrl || '', 1000), status: 'pending', clicks: 0, views: 0, reports: 0, createdAt: Date.now(), ip };
+    const fetchedImage = safeStr(body.fetchedImageUrl || '', 1000);
+    const stored = await storeImage(userImage) || await storeImage(fetchedImage);
+    const group = { id, slug: slugify(title, id), title, url, type, category, country, language, tags, description, imageUrl: stored, status: 'pending', clicks: 0, views: 0, reports: 0, createdAt: Date.now(), ip };
     db.groups.push(group);
     save();
     return json(res, 200, { ok: true, message: 'Requesting review… your group is in the queue.', slug: group.slug });
@@ -399,6 +453,18 @@ const server = http.createServer(async (req, res) => {
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'x';
 
   try {
+    // locally stored group photos
+    if (req.method === 'GET' && pathname.startsWith('/i/')) {
+      const name = pathname.slice(3).replace(/[^a-z0-9.]/gi, '');
+      const file = path.join(IMG_DIR, name);
+      if (file.startsWith(IMG_DIR) && fs.existsSync(file)) {
+        res.writeHead(200, { 'content-type': IMG_MIME[path.extname(file)] || 'image/jpeg', 'cache-control': 'public, max-age=604800' });
+        return res.end(fs.readFileSync(file));
+      }
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      return res.end('Not found');
+    }
+
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, url.searchParams, ip);
 
     if (req.method === 'GET' && pathname === '/sitemap.xml') {
@@ -422,6 +488,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
       if (serveStatic(res, 'index.html')) return;
     }
+    // admin-only host: everything here is the control panel
+    const host = (req.headers.host || '').toLowerCase().split(':')[0];
+    if (ADMIN_HOST && host === ADMIN_HOST) {
+      if (req.method === 'GET' && pathname !== '/favicon.ico') {
+        if (serveStatic(res, 'admin.html')) return;
+      }
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      return res.end('Not found');
+    }
+
     if (req.method === 'GET' && pathname === '/' + ADMIN_PATH) {
       if (serveStatic(res, 'admin.html')) return;
     }
